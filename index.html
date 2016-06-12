@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+	<title>Auction room</title>
+  <script type="text/javascript" src="scripts/adapter.js"></script>
+  <script type="text/javascript">
+    var stun_server = "stun.l.google.com:19302";
+    var ws = new WebSocket("ws://localhost:8888");
+    var initiator = true;
+    peer_connection = new RTCPeerConnection({
+      "iceServers" : [{ "urls" : "stun:" + stun_server }]
+    });
+    console.log(peer_connection);
+
+    peer_connection.onicecandidate = function (ice_event) {
+      console.log("Started gathering ice candidates");
+      console.log(ice_event);
+      ws.send(JSON.stringify({ sid:ts, type:"ice", icec: ice_event.candidate, isStart: initiator }));
+    };
+
+    peer_connection.onaddstream = function (stream_event) {
+      console.log("Setting up remote streaming");
+      console.log(stream_event);
+      var remote_video = document.getElementById('remote_video');
+      remote_video.src = window.URL.createObjectURL(stream_event.stream);
+      remote_video.play();
+    };
+
+    function errorLog() {
+      console.log("Some error!")
+    }
+
+    function create_offer() {
+      peer_connection.createOffer(
+        function(offer) {
+          console.log(offer);
+          peer_connection.setLocalDescription(
+            offer,
+            function() {
+              console.log("Forward the offer!")
+              ws.send(JSON.stringify({sid:ts, type:"offer_sent", sdp:offer}));
+            }, errorLog);
+        }, errorLog);
+    }
+
+    var um = navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    um.then(function(mediaStream) {
+      var video = document.getElementById('local_video');
+      video.src = window.URL.createObjectURL(mediaStream);
+/*        video.onloadedmetadata = function(e) {
+        console.log("In onloadedmetadata");
+      };*/
+      video.play();
+      console.log("Added local stream");
+      console.log(mediaStream);
+      peer_connection.addStream(mediaStream);
+      console.log("Success");
+    });
+
+    um.catch(function(err) { console.log(err.name); });
+
+    ws.onopen = function() {
+      if (document.location.hash === "") {
+        ts = Date.now();
+        sessionId = document.getElementById('sessionId');
+        sessionId.innerText = "Please use the URL - http://localhost:8888/#" + ts;
+        ws.send(JSON.stringify({ sid: ts, type: "init" }));
+      } else {
+        initiator = false;
+        ts = document.location.hash.slice(1);
+        ws.send(JSON.stringify({ sid: ts, type: "join"}));
+      }
+    };
+    ws.onmessage = function(event) {
+      console.log("Message received " + event.data);
+      data = JSON.parse(event.data);
+      if(data.type == "joined") {
+        create_offer();
+      } else if (data.type == "offer_sent") {
+        console.log("Offer received!");
+        console.log(data.sdp);
+        peer_connection.setRemoteDescription(
+          new RTCSessionDescription(data.sdp),
+          function() {
+            peer_connection.createAnswer(
+              function(answer) {
+                peer_connection.setLocalDescription(
+                  answer,
+                  function() {
+                    ws.send(JSON.stringify({ sid:ts, type:"answer_sent", sdp:answer }));
+                  }, errorLog);
+              },errorLog);
+          },errorLog);
+      } else if (data.type == "answer_sent") {
+        peer_connection.setRemoteDescription(new RTCSessionDescription(data.sdp), function() {}, errorLog);
+      } else if (data.type == "ice") {
+        peer_connection.addIceCandidate(new RTCIceCandidate(data.icec), 
+          function() {
+            console.log("Added ice candidates!");
+          }
+        , errorLog);
+      } else {
+        console.log("Unknown type");        
+      }
+    }
+  </script>
+	<body>
+    Auction room
+    <div id="sessionId"></div>
+    <div id="divLocalVideo">
+      <video id="local_video"></video>
+    </div>
+    <div id="divRemoteVideo">
+      <video id="remote_video"></video>
+    </div>
+	</body>
+</html>
