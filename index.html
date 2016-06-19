@@ -46,9 +46,6 @@
     um.then(function(mediaStream) {
       var video = document.getElementById('local_video');
       video.src = window.URL.createObjectURL(mediaStream);
-/*        video.onloadedmetadata = function(e) {
-        console.log("In onloadedmetadata");
-      };*/
       video.play();
       console.log("Added local stream");
       console.log(mediaStream);
