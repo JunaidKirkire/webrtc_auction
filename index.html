@@ -13,14 +13,10 @@
     console.log(peer_connection);
 
     peer_connection.onicecandidate = function (ice_event) {
-      console.log("Started gathering ice candidates");
-      console.log(ice_event);
       ws.send(JSON.stringify({ sid:ts, type:"ice", icec: ice_event.candidate, isStart: initiator }));
     };
 
     peer_connection.onaddstream = function (stream_event) {
-      console.log("Setting up remote streaming");
-      console.log(stream_event);
       var remote_video = document.getElementById('remote_video');
       remote_video.src = window.URL.createObjectURL(stream_event.stream);
       remote_video.play();
@@ -40,7 +36,6 @@
             peer_connection.setLocalDescription(
               offer,
               function() {
-                console.log("Forward the offer!")
                 ws.send(JSON.stringify({sid:ts, type:"offer_sent", sdp:offer}));
               }, errorLog);
           }, errorLog);
@@ -71,11 +66,8 @@
       var video = document.getElementById('local_video');
       video.src = window.URL.createObjectURL(mediaStream);
       video.play();
-      console.log("Added local stream");
-      console.log(mediaStream);
       peer_connection.addStream(mediaStream);
       local_stream_added = true;
-      console.log("Success");
     });
 
     um.catch(function(err) { console.log(err.name); });
@@ -93,13 +85,10 @@
       }
     };
     ws.onmessage = function(event) {
-      console.log("Message received " + event.data);
       data = JSON.parse(event.data);
       if(data.type == "joined") {
         create_offer();
       } else if (data.type == "offer_sent") {
-        console.log("Offer received!");
-        console.log(data.sdp);
         create_answer(data.sdp);
       } else if (data.type == "answer_sent") {
         peer_connection.setRemoteDescription(new RTCSessionDescription(data.sdp), function() {}, errorLog);
