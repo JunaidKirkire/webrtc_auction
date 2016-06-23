@@ -6,6 +6,7 @@
     var stun_server = "stun.l.google.com:19302";
     var ws = new WebSocket("ws://localhost:8888");
     var initiator = true;
+    var local_stream_added = false;
     peer_connection = new RTCPeerConnection({
       "iceServers" : [{ "urls" : "stun:" + stun_server }]
     });
@@ -30,16 +31,39 @@
     }
 
     function create_offer() {
-      peer_connection.createOffer(
-        function(offer) {
-          console.log(offer);
-          peer_connection.setLocalDescription(
-            offer,
-            function() {
-              console.log("Forward the offer!")
-              ws.send(JSON.stringify({sid:ts, type:"offer_sent", sdp:offer}));
-            }, errorLog);
-        }, errorLog);
+      if (!local_stream_added) {
+        setTimeout(function() { create_offer(); }, 1000);
+      } else {
+        peer_connection.createOffer(
+          function(offer) {
+            console.log(offer);
+            peer_connection.setLocalDescription(
+              offer,
+              function() {
+                console.log("Forward the offer!")
+                ws.send(JSON.stringify({sid:ts, type:"offer_sent", sdp:offer}));
+              }, errorLog);
+          }, errorLog);
+      }
+    }
+
+    function create_answer(desc) {
+      if(!local_stream_added) {
+        setTimeout(function() {create_answer(desc);}, 1000);
+      } else {
+        peer_connection.setRemoteDescription(
+          new RTCSessionDescription(desc),
+          function() {
+            peer_connection.createAnswer(
+              function(answer) {
+                peer_connection.setLocalDescription(
+                  answer,
+                  function() {
+                    ws.send(JSON.stringify({ sid:ts, type:"answer_sent", sdp:answer }));
+                  }, errorLog);
+              },errorLog);
+          },errorLog);
+      }
     }
 
     var um = navigator.mediaDevices.getUserMedia({ video:true, audio:true });
@@ -50,6 +74,7 @@
       console.log("Added local stream");
       console.log(mediaStream);
       peer_connection.addStream(mediaStream);
+      local_stream_added = true;
       console.log("Success");
     });
 
@@ -75,18 +100,7 @@
       } else if (data.type == "offer_sent") {
         console.log("Offer received!");
         console.log(data.sdp);
-        peer_connection.setRemoteDescription(
-          new RTCSessionDescription(data.sdp),
-          function() {
-            peer_connection.createAnswer(
-              function(answer) {
-                peer_connection.setLocalDescription(
-                  answer,
-                  function() {
-                    ws.send(JSON.stringify({ sid:ts, type:"answer_sent", sdp:answer }));
-                  }, errorLog);
-              },errorLog);
-          },errorLog);
+        create_answer(data.sdp);
       } else if (data.type == "answer_sent") {
         peer_connection.setRemoteDescription(new RTCSessionDescription(data.sdp), function() {}, errorLog);
       } else if (data.type == "ice") {
