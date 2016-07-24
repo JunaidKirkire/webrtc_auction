@@ -4,7 +4,7 @@
   <script type="text/javascript" src="scripts/adapter.js"></script>
   <script type="text/javascript">
     var stun_server = "stun.l.google.com:19302";
-    var ws = new WebSocket("ws://localhost:8888");
+    var ws;
     var initiator = true;
     var local_stream_added = false;
     peer_connection = new RTCPeerConnection({
@@ -27,38 +27,30 @@
     }
 
     function create_offer() {
-      if (!local_stream_added) {
-        setTimeout(function() { create_offer(); }, 1000);
-      } else {
-        peer_connection.createOffer(
-          function(offer) {
-            console.log(offer);
-            peer_connection.setLocalDescription(
-              offer,
-              function() {
-                ws.send(JSON.stringify({sid:ts, type:"offer_sent", sdp:offer}));
-              }, errorLog);
-          }, errorLog);
-      }
+      peer_connection.createOffer(
+        function(offer) {
+          console.log(offer);
+          peer_connection.setLocalDescription(
+            offer,
+            function() {
+              ws.send(JSON.stringify({sid:ts, type:"offer_sent", sdp:offer}));
+            }, errorLog);
+        }, errorLog);
     }
 
     function create_answer(desc) {
-      if(!local_stream_added) {
-        setTimeout(function() {create_answer(desc);}, 1000);
-      } else {
-        peer_connection.setRemoteDescription(
-          new RTCSessionDescription(desc),
-          function() {
-            peer_connection.createAnswer(
-              function(answer) {
-                peer_connection.setLocalDescription(
-                  answer,
-                  function() {
-                    ws.send(JSON.stringify({ sid:ts, type:"answer_sent", sdp:answer }));
-                  }, errorLog);
-              },errorLog);
-          },errorLog);
-      }
+      peer_connection.setRemoteDescription(
+        new RTCSessionDescription(desc),
+        function() {
+          peer_connection.createAnswer(
+            function(answer) {
+              peer_connection.setLocalDescription(
+                answer,
+                function() {
+                  ws.send(JSON.stringify({ sid:ts, type:"answer_sent", sdp:answer }));
+                }, errorLog);
+            },errorLog);
+        },errorLog);
     }
 
     var um = navigator.mediaDevices.getUserMedia({ video:true, audio:true });
@@ -68,40 +60,45 @@
       video.play();
       peer_connection.addStream(mediaStream);
       local_stream_added = true;
+      return local_stream_added;
+    }).then(function(isLocalStreamAdded) {
+        if(isLocalStreamAdded) {
+          ws = new WebSocket("ws://localhost:8888");
+          ws.onopen = function() {
+            if (document.location.hash === "") {
+              ts = Date.now();
+              sessionId = document.getElementById('sessionId');
+              sessionId.innerText = "Please use the URL - http://localhost:8888/#" + ts;
+              ws.send(JSON.stringify({ sid: ts, type: "init" }));
+            } else {
+              initiator = false;
+              ts = document.location.hash.slice(1);
+              ws.send(JSON.stringify({ sid: ts, type: "join"}));
+            }
+          };
+          ws.onmessage = function(event) {
+            data = JSON.parse(event.data);
+            if(data.type == "joined") {
+              create_offer();
+            } else if (data.type == "offer_sent") {
+              create_answer(data.sdp);
+            } else if (data.type == "answer_sent") {
+              peer_connection.setRemoteDescription(new RTCSessionDescription(data.sdp), function() {}, errorLog);
+            } else if (data.type == "ice") {
+              peer_connection.addIceCandidate(new RTCIceCandidate(data.icec),
+                function() {
+                  console.log("Added ice candidates!");
+                }
+              , errorLog);
+            } else {
+              console.log("Unknown type");
+            }
+          }
+        }
     });
 
     um.catch(function(err) { console.log(err.name); });
 
-    ws.onopen = function() {
-      if (document.location.hash === "") {
-        ts = Date.now();
-        sessionId = document.getElementById('sessionId');
-        sessionId.innerText = "Please use the URL - http://localhost:8888/#" + ts;
-        ws.send(JSON.stringify({ sid: ts, type: "init" }));
-      } else {
-        initiator = false;
-        ts = document.location.hash.slice(1);
-        ws.send(JSON.stringify({ sid: ts, type: "join"}));
-      }
-    };
-    ws.onmessage = function(event) {
-      data = JSON.parse(event.data);
-      if(data.type == "joined") {
-        create_offer();
-      } else if (data.type == "offer_sent") {
-        create_answer(data.sdp);
-      } else if (data.type == "answer_sent") {
-        peer_connection.setRemoteDescription(new RTCSessionDescription(data.sdp), function() {}, errorLog);
-      } else if (data.type == "ice") {
-        peer_connection.addIceCandidate(new RTCIceCandidate(data.icec), 
-          function() {
-            console.log("Added ice candidates!");
-          }
-        , errorLog);
-      } else {
-        console.log("Unknown type");        
-      }
-    }
   </script>
 	<body>
     Auction room
